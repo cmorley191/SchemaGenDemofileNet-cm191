@@ -4,6 +4,7 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <iomanip>
 #include <set>
 #include <sstream>
 #include <string>
@@ -35,6 +36,102 @@ namespace codegen {
                 this->_forward_decls = v._forward_decls;
             }
             return *this;
+        }
+
+    public:
+        self_ref begin_json_object() {
+            push_line("{");
+            inc_tabs_count(kTabsPerBlock);
+            return *this;
+        }
+
+        self_ref begin_json_object_value() {
+            _stream << "{" << std::endl;
+            inc_tabs_count(kTabsPerBlock);
+            return *this;
+        }
+
+        self_ref end_json_object(bool write_comma = true) {
+            dec_tabs_count(kTabsPerBlock);
+            if (write_comma)
+                push_line("},");
+            else
+                push_line("}");
+            return *this;
+        }
+
+        self_ref begin_json_array() {
+            push_line("[");
+            inc_tabs_count(kTabsPerBlock);
+            return *this;
+        }
+
+        self_ref begin_json_array_value() {
+            _stream << "[" << std::endl;
+            inc_tabs_count(kTabsPerBlock);
+            return *this;
+        }
+
+        self_ref end_json_array() {
+            dec_tabs_count(kTabsPerBlock);
+            push_line("],");
+            return *this;
+        }
+
+        self_ref json_key(const std::string& str) {
+            return push_line("\"" + escape_json_string(str) + "\": ", false);
+        }
+
+        self_ref json_string(const std::string& str) {
+            _stream << "\"" + escape_json_string(str) + "\"," << std::endl;
+            return *this;
+        }
+
+        template <typename T>
+        self_ref json_literal(T value) {
+            _stream << std::format("{},", value) << std::endl;
+            return *this;
+        }
+
+    private:
+        std::string escape_json_string(const std::string& input) {
+            std::ostringstream ss;
+            for (auto c : input) {
+                switch (c) {
+                case '\\':
+                    ss << "\\\\";
+                    break;
+                case '"':
+                    ss << "\\\"";
+                    break;
+                case '/':
+                    ss << "\\/";
+                    break;
+                case '\b':
+                    ss << "\\b";
+                    break;
+                case '\f':
+                    ss << "\\f";
+                    break;
+                case '\n':
+                    ss << "\\n";
+                    break;
+                case '\r':
+                    ss << "\\r";
+                    break;
+                case '\t':
+                    ss << "\\t";
+                    break;
+                default:
+                    if ('\x00' <= c && c <= '\x1f') {
+                        //ss << "\\u" << std::hex << (int)c;
+                        ss << "\\u" << std::setfill('0') << std::setw(4) << std::hex << (int)(unsigned char)c;
+                    } else {
+                        ss << c;
+                    }
+                }
+            }
+            return ss.str();
         }
 
     public:

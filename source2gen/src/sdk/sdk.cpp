@@ -123,6 +123,12 @@ namespace {
         FNV32("MNetworkVarNames"), FNV32("MNetworkOverride"), FNV32("MNetworkVarTypeOverride"), FNV32("MScriptDescription"), FNV32("MParticleDomainTag"),
     };
 
+    constinit std::array var_string_class_metadata_entries = {
+        FNV32("MPropertyArrayElementNameKey"), FNV32("MPropertyFriendlyName"),      FNV32("MPropertyDescription"),
+        FNV32("MNetworkExcludeByName"),        FNV32("MNetworkExcludeByUserGroup"), FNV32("MNetworkIncludeByName"),
+        FNV32("MNetworkIncludeByUserGroup"),   FNV32("MNetworkUserGroupProxy"),     FNV32("MNetworkReplayCompatField"),
+    };
+
     constinit std::array integer_metadata_entries = {
         FNV32("MNetworkVarEmbeddedFieldOffsetDelta"),
         FNV32("MNetworkBitCount"),
@@ -343,6 +349,37 @@ namespace {
         }
     }
 
+    void WriteTypeJson(codegen::generator_t::self_ref schema_builder, CSchemaType* current_type) {
+        schema_builder.begin_json_object_value().json_key("name").json_string(current_type->m_pszName);
+
+        schema_builder.json_key("category").json_literal((int)current_type->m_unTypeCategory);
+
+        if (current_type->m_unTypeCategory == ETypeCategory::Schema_Atomic) {
+            schema_builder.json_key("atomic").json_literal((int)current_type->m_unAtomicCategory);
+
+            if (current_type->m_unAtomicCategory == EAtomicCategory::Atomic_T || current_type->m_unAtomicCategory == EAtomicCategory::Atomic_CollectionOfT) {
+                const auto atomic_t = (CSchemaType_Atomic_T*)current_type;
+                if (atomic_t->m_pAtomicInfo != nullptr) {
+                    schema_builder.json_key("outer").json_string(atomic_t->m_pAtomicInfo->m_pszName1); // i think name 1 is name, while name 2 is token name
+                }
+
+                if (atomic_t->m_pTemplateType != nullptr) {
+                    schema_builder.json_key("inner");
+                    WriteTypeJson(schema_builder, atomic_t->m_pTemplateType);
+                }
+            }
+        } else if (current_type->m_unTypeCategory == ETypeCategory::Schema_FixedArray) {
+            schema_builder.json_key("arraySize").json_literal(((CSchemaType_FixedArray*)current_type)->m_nElementCount);
+            schema_builder.json_key("inner");
+            WriteTypeJson(schema_builder, ((CSchemaType_FixedArray*)current_type)->m_pElementType);
+        } else if (current_type->m_unTypeCategory == ETypeCategory::Schema_Ptr) {
+            schema_builder.json_key("inner");
+            WriteTypeJson(schema_builder, current_type->GetRefClass());
+        }
+
+        schema_builder.end_json_object();
+    }
+
     void PrintEnumInfo(codegen::generator_t::self_ref builder, const CSchemaEnumBinding& enum_binding) {
         builder.comment(std::format("Enumerator count: {}", enum_binding.m_nEnumeratorCount))
             .comment(std::format("Alignment: {}", enum_binding.m_unAlignOf))
@@ -356,7 +393,8 @@ namespace {
         }
     }
 
-    void AssembleEnum(codegen::generator_t::self_ref builder, const CSchemaEnumBinding& schema_enum_binding) {
+    void AssembleEnum(codegen::generator_t::self_ref builder, const CSchemaEnumBinding& schema_enum_binding,
+                      codegen::generator_t::self_ref schema_builder) {
         // @note: @es3n1n: get type name by align size
         //
         const auto get_type_name = [&schema_enum_binding]() -> std::string {
@@ -389,30 +427,83 @@ namespace {
         // @note: @es3n1n: begin enum class
         //
         builder.begin_enum_class(schema_enum_binding.m_pszName, get_type_name());
+        schema_builder.json_key(schema_enum_binding.m_pszName).begin_json_object_value();
+
+        schema_builder.json_key("align").json_literal(schema_enum_binding.m_unAlignOf);
+
+        if (
+            schema_enum_binding.m_nMinEnumeratorValue < -1 
+            || schema_enum_binding.m_nMinEnumeratorValue > schema_enum_binding.m_nMaxEnumeratorValue
+            || ([&schema_enum_binding]() {
+                switch (schema_enum_binding.m_unAlignOf) {
+                case 1:
+                    return schema_enum_binding.m_nMaxEnumeratorValue > std::numeric_limits<uint8_t>::max();
+                case 2:
+                    return schema_enum_binding.m_nMaxEnumeratorValue > std::numeric_limits<uint16_t>::max();
+                case 4:
+                    return schema_enum_binding.m_nMaxEnumeratorValue > std::numeric_limits<uint32_t>::max();
+                case 8:
+                default:
+                    return false;
+                }
+            })()
+        ) {
+            warn(std::format(
+                "Enum {} has unexpected range: {}..{} (align = {})",
+                schema_enum_binding.m_pszName,
+                schema_enum_binding.m_nMinEnumeratorValue,
+                schema_enum_binding.m_nMaxEnumeratorValue,
+                schema_enum_binding.m_unAlignOf
+            ));
+        }
 
         // @note: @og: build max based on numeric_limits of unAlignOf
         //
-        const auto print_enum_item = [schema_enum_binding, &builder](const SchemaEnumeratorInfoData_t& field) {
+        const auto print_enum_item = [schema_enum_binding, &builder, &schema_builder](const SchemaEnumeratorInfoData_t& field) {
+            schema_builder.begin_json_object();
+                
+            schema_builder.json_key("name").json_string(field.m_szName);
+
+            schema_builder.json_key("value");
+            
             switch (schema_enum_binding.m_unAlignOf) {
             case 1:
                 builder.enum_item(field.m_szName, field.m_uint8);
+                if (schema_enum_binding.m_nMinEnumeratorValue == -1 && field.m_uint8 == std::numeric_limits<uint8_t>::max())
+                    schema_builder.json_literal(-1);
+                else
+                    schema_builder.json_literal(field.m_uint8);
                 break;
             case 2:
                 builder.enum_item(field.m_szName, field.m_uint16);
+                if (schema_enum_binding.m_nMinEnumeratorValue == -1 && field.m_uint16 == std::numeric_limits<uint16_t>::max())
+                    schema_builder.json_literal(-1);
+                else
+                    schema_builder.json_literal(field.m_uint16);
                 break;
             case 4:
                 builder.enum_item(field.m_szName, field.m_uint32);
+                if (schema_enum_binding.m_nMinEnumeratorValue == -1 && field.m_uint32 == std::numeric_limits<uint32_t>::max())
+                    schema_builder.json_literal(-1);
+                else
+                    schema_builder.json_literal(field.m_uint32);
                 break;
             case 8:
-                builder.enum_item(field.m_szName, field.m_uint64);
-                break;
             default:
                 builder.enum_item(field.m_szName, field.m_uint64);
+                if (schema_enum_binding.m_nMinEnumeratorValue == -1 && field.m_uint64 == std::numeric_limits<uint64_t>::max())
+                    schema_builder.json_literal(-1);
+                else
+                    schema_builder.json_literal(field.m_uint64);
+                break;
             }
-        };
+
+            schema_builder.end_json_object();
+        };      
 
         // @note: @es3n1n: assemble enum items
         //
+        schema_builder.json_key("items").begin_json_array_value();
         for (const auto& field : schema_enum_binding.GetEnumeratorValues()) {
             // @note: @og: dump enum metadata
             //
@@ -427,10 +518,12 @@ namespace {
 
             print_enum_item(field);
         }
+        schema_builder.end_json_array();
 
         // @note: @es3n1n: we are done with this enum
         //
         builder.end_enum_class();
+        schema_builder.end_json_object();
     }
 
     /// @return {type_name, array_sizes}
@@ -760,7 +853,8 @@ namespace {
         }
     }
 
-    void AssembleClass(sdk::GeneratorCache& cache, codegen::generator_t::self_ref builder, const CSchemaClassBinding& class_) {
+    void AssembleClass(sdk::GeneratorCache& cache, codegen::generator_t::self_ref builder, const CSchemaClassBinding& class_,
+                       codegen::generator_t::self_ref schema_builder) {
         static constexpr std::size_t source2_max_align = 8;
 
         // TODO: when we have a CLI parser: pass this property in from the outside
@@ -840,12 +934,90 @@ namespace {
             builder.begin_struct_with_base_type(class_.m_pszName, parent_class_name);
         else
             builder.begin_class_with_base_type(class_.m_pszName, parent_class_name);
+        
+        schema_builder.json_key(class_.m_pszName).begin_json_object_value();
+        if (class_parent != nullptr) {
+            schema_builder.json_key("parent").json_string(class_parent->m_pszName);
+        }
+        auto write_metadata_json = [&](const SchemaMetadataEntryData_t metadata_entry) -> void {
+            std::string value;
+
+            schema_builder.begin_json_object();
+            schema_builder.json_key("name").json_string(metadata_entry.m_szName);
+
+            if (strcmp(metadata_entry.m_szName, "MResourceTypeForInfoType") == 0) {
+                schema_builder.end_json_object();
+                return;
+            }
+
+            const auto value_hash_name = fnv32::hash_runtime(metadata_entry.m_szName);
+
+            // Adapted GetMetadataValue(...)
+            if (std::ranges::find(var_name_string_class_metadata_entries, value_hash_name) != var_name_string_class_metadata_entries.end()) {
+                schema_builder.json_key("value").begin_json_object_value();
+
+                const auto& var_value = metadata_entry.m_pNetworkValue->m_VarValue;
+
+                const auto check_ptr = [](const char* ptr) -> bool {
+                    /// @note: hotfix for the deadlock 14/09/24 update,
+                    ///     where they filled some ptrs with -1 instead of nullptr
+                    return ptr != nullptr && ptr != reinterpret_cast<const char*>(-1);
+                };
+
+                if (check_ptr(var_value.m_pszType))
+                    schema_builder.json_key("type").json_string(var_value.m_pszType);
+                if (check_ptr(var_value.m_pszName))
+                    schema_builder.json_key("name").json_string(var_value.m_pszName);
+
+                schema_builder.end_json_object();
+
+            } else if (std::ranges::find(string_class_metadata_entries, value_hash_name) != string_class_metadata_entries.end()) {
+                /// Explicitly convert to std::string with the size as the string may not end with a nullterm
+                /// But if this string does contain a null terminator, we should properly handle this too
+                const auto& szValue = metadata_entry.m_pNetworkValue->m_szValue;
+                const auto null_pos = std::find(szValue.begin(), szValue.end(), 0x00);
+                const auto size = null_pos != szValue.end() ? std::distance(szValue.begin(), null_pos) : szValue.size();
+
+                schema_builder.json_key("value").json_string(std::string(metadata_entry.m_pNetworkValue->m_szValue.data(), size));
+            } else if (std::ranges::find(var_string_class_metadata_entries, value_hash_name) != var_string_class_metadata_entries.end()) {
+                schema_builder.json_key("value").json_string(metadata_entry.m_pNetworkValue->m_pszValue);
+            } else if (std::ranges::find(string_metadata_entries, value_hash_name) != string_metadata_entries.end()) {
+                schema_builder.json_key("value").json_string(metadata_entry.m_pNetworkValue->m_pszValue);
+            } else if (std::ranges::find(integer_metadata_entries, value_hash_name) != integer_metadata_entries.end()) {
+                schema_builder.json_key("value").json_literal(metadata_entry.m_pNetworkValue->m_nValue);
+            } else if (std::ranges::find(float_metadata_entries, value_hash_name) != float_metadata_entries.end()) {
+                schema_builder.json_key("value").json_literal(metadata_entry.m_pNetworkValue->m_fValue);
+            }
+
+            schema_builder.end_json_object();
+        };
+        bool is_atomic = false;
+        std::set<std::string> network_var_names;
+        schema_builder.json_key("metadata").begin_json_array_value();
+        for (const auto& metadata : class_.GetStaticMetadata()) {
+            if (strcmp(metadata.m_szName, "MNetworkVarNames") == 0) {
+                // Keep track of all network vars
+                network_var_names.insert(metadata.m_pNetworkValue->m_VarValue.m_pszName);
+
+                // don't write var names - too verbose
+                continue;
+            }
+
+            if (strcmp(metadata.m_szName, "MNetworkVarsAtomic") == 0) {
+                is_atomic = true;
+            }
+
+            write_metadata_json(metadata);
+        }
+        schema_builder.end_json_array();
 
         /// If fields cannot be emitted, e.g. because of collisions, they're added to
         /// this set so we can ignore them when asserting offsets.
         std::unordered_set<std::string> skipped_fields{};
         std::list<std::pair<std::string, std::ptrdiff_t>> cached_fields{};
         std::list<cached_datamap_t> cached_datamap_fields{};
+
+        schema_builder.json_key("fields").begin_json_array_value();
 
         for (const auto& field : class_.GetFields()) {
             // Fall back to size=1 because there are no 0-sized types.
@@ -968,7 +1140,45 @@ namespace {
             cached_fields.emplace_back(var_info.formatted_name(), field.m_nSingleInheritanceOffset);
 
             builder.next_line();
+
+
+            if (!network_var_names.contains(field.m_pszName) && !is_atomic) {
+                bool is_network_enable = [&]() {
+                    if (strcmp(class_.m_pszName, "ServerAuthoritativeWeaponSlot_t") == 0)
+                        return true;
+
+                    for (auto j = 0; j < field.m_nMetadataSize; j++) {
+                        if (strcmp(field.m_pMetadata[j].m_szName, "MNetworkEnable") == 0) {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                }();
+
+                if (!is_network_enable) {
+                    continue;
+                }
+            }
+
+            schema_builder.begin_json_object().json_key("name").json_string(field.m_pszName);
+
+            schema_builder.json_key("type");
+            WriteTypeJson(schema_builder, field.m_pSchemaType);
+
+            schema_builder.json_key("metadata").begin_json_array_value();
+            for (auto j = 0; j < field.m_nMetadataSize; j++) {
+                if (strcmp(field.m_pMetadata[j].m_szName, "MNetworkEnable")) { // TODO: is this a bug? (not having `== 0`) -- this exists in Saul's CS2SchemaGen
+                    write_metadata_json(field.m_pMetadata[j]);
+                }
+            }
+            schema_builder.end_json_array();
+
+            schema_builder.end_json_object();
         }
+        schema_builder.end_json_array();
+
+        schema_builder.end_json_object();
 
         // @note: @es3n1n: if struct ends with bitfield we should end bitfield before ending the class
         //
@@ -1098,7 +1308,7 @@ namespace {
         return util::EscapePath(std::format("{}/include/{}/{}/{}.hpp", kOutDirName, kIncludeDirName, module_name, DecayTypeName(type_name)));
     }
 
-    void GenerateEnumSdk(std::string_view module_name, const CSchemaEnumBinding& enum_) {
+    void GenerateEnumSdk(std::string_view module_name, const CSchemaEnumBinding& enum_, codegen::generator_t::self_ref schema_builder) {
         const auto out_file_path = GetFilePathForType(module_name, enum_.m_pszName).string();
 
         // @note: @es3n1n: init codegen
@@ -1121,25 +1331,25 @@ namespace {
 
         // @note: @es3n1n: assemble props
         //
-        AssembleEnum(builder, enum_);
+        AssembleEnum(builder, enum_, schema_builder);
 
         builder.end_namespace();
 
         // @note: @es3n1n: write generated data to output file
         //
-        std::ofstream f(out_file_path, std::ios::out);
-        f << builder.str();
-        if (!f.good()) {
-            std::cerr << std::format("Could not write to {}: {}", out_file_path, std::strerror(errno)) << std::endl;
-            // This std::exit() is bad. Instead, we could return the dumped
-            // header name and content to the caller in a std::expected. Let the
-            // caller write the file. That would also allow the caller to choose
-            // the output directory and handle errors.
-            std::exit(1);
-        }
+        //std::ofstream f(out_file_path, std::ios::out);
+        //f << builder.str();
+        //if (!f.good()) {
+        //    std::cerr << std::format("Could not write to {}: {}", out_file_path, std::strerror(errno)) << std::endl;
+        //    // This std::exit() is bad. Instead, we could return the dumped
+        //    // header name and content to the caller in a std::expected. Let the
+        //    // caller write the file. That would also allow the caller to choose
+        //    // the output directory and handle errors.
+        //    std::exit(1);
+        //}
     }
 
-    void GenerateClassSdk(sdk::GeneratorCache& cache, std::string_view module_name, const CSchemaClassBinding& class_) {
+    void GenerateClassSdk(sdk::GeneratorCache& cache, std::string_view module_name, const CSchemaClassBinding& class_, codegen::generator_t::self_ref schema_builder) {
         const auto out_file_path = GetFilePathForType(module_name, class_.m_pszName).string();
 
         // @note: @es3n1n: init codegen
@@ -1177,22 +1387,22 @@ namespace {
 
         // @note: @es3n1n: assemble props
         //
-        AssembleClass(cache, builder, class_);
+        AssembleClass(cache, builder, class_, schema_builder);
 
         builder.end_namespace();
 
         // @note: @es3n1n: write generated data to output file
         //
-        std::ofstream f(out_file_path, std::ios::out);
-        f << builder.str();
-        if (!f.good()) {
-            std::cerr << std::format("Could not write to {}: {}", out_file_path, std::strerror(errno)) << std::endl;
-            // This std::exit() is bad. Instead, we could return the dumped
-            // header name and content to the caller in a std::expected. Let the
-            // caller write the file. That would also allow the caller to choose
-            // the output directory and handle errors.
-            std::exit(1);
-        }
+        //std::ofstream f(out_file_path, std::ios::out);
+        //f << builder.str();
+        //if (!f.good()) {
+        //    std::cerr << std::format("Could not write to {}: {}", out_file_path, std::strerror(errno)) << std::endl;
+        //    // This std::exit() is bad. Instead, we could return the dumped
+        //    // header name and content to the caller in a std::expected. Let the
+        //    // caller write the file. That would also allow the caller to choose
+        //    // the output directory and handle errors.
+        //    std::exit(1);
+        //}
     }
 } // namespace
 
@@ -1204,13 +1414,39 @@ namespace sdk {
         std::cout << std::format("{}: Assembling module {} with {} enum(s) and {} class(es)", __FUNCTION__, module_name, enums.size(), classes.size())
                   << std::endl;
 
-        const std::filesystem::path out_directory_path = std::format("{}/include/{}/{}", kOutDirName, kIncludeDirName, module_name);
+        //const std::filesystem::path out_directory_path = std::format("{}/include/{}/{}", kOutDirName, kIncludeDirName, module_name);
+        const std::filesystem::path out_directory_path = std::format("{}", kOutDirName);
 
         if (!std::filesystem::exists(out_directory_path))
             std::filesystem::create_directories(out_directory_path);
 
-        std::ranges::for_each(enums, [=](const auto* el) { GenerateEnumSdk(module_name, *el); });
-        std::ranges::for_each(classes, [&](const auto* el) { GenerateClassSdk(cache, module_name, *el); });
+        // Adapted from GetFilePathForType
+        //const auto schema_out_file_path = util::EscapePath(std::format("{}/include/{}/{}/_schema.json", kOutDirName, kIncludeDirName, module_name));
+        const auto schema_out_file_path = util::EscapePath(std::format("{}/{}.json", kOutDirName, module_name == "global" ? "!GlobalTypes" : module_name));
+
+        auto schema_builder = codegen::get();
+        schema_builder.begin_json_object();
+
+        schema_builder.json_key("enums").begin_json_object_value();
+        std::ranges::for_each(enums, [&](const auto* el) { GenerateEnumSdk(module_name, *el, schema_builder); });
+        schema_builder.end_json_object();
+
+        schema_builder.json_key("classes").begin_json_object_value();
+        std::ranges::for_each(classes, [&](const auto* el) { GenerateClassSdk(cache, module_name, *el, schema_builder); });
+        schema_builder.end_json_object();
+
+        schema_builder.end_json_object(false);
+        std::ofstream f(schema_out_file_path, std::ios::out);
+        f << schema_builder.str();
+        if (!f.good()) {
+            std::cerr << std::format("Could not write to {}: {}", schema_out_file_path, std::strerror(errno)) << std::endl;
+            // This std::exit() is bad. Instead, we could return the dumped
+            // header name and content to the caller in a std::expected. Let the
+            // caller write the file. That would also allow the caller to choose
+            // the output directory and handle errors.
+            std::exit(1);
+        }
+        f.close();
     }
 } // namespace sdk
 

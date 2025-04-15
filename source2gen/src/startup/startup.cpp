@@ -180,6 +180,20 @@ namespace source2_gen {
             sdk::GenerateTypeScopeSdk(cache, module_name, dump.enums, dump.classes);
         }
 
+        module_dump global_dump;
+        {
+            auto current_enums = sdk::g_schema->GlobalTypeScope()->GetEnumBindings();
+            for (auto el : current_enums.GetElements()) {
+                global_dump.enums.emplace(el);
+            }
+
+            auto current_classes = sdk::g_schema->GlobalTypeScope()->GetClassBindings();
+            for (auto el : current_classes.GetElements()) {
+                global_dump.classes.emplace(el);
+            }
+        }
+        sdk::GenerateTypeScopeSdk(cache, "global", global_dump.enums, global_dump.classes);
+
         std::cout << std::format("Schema stats: {} registrations; {} were redundant; {} were ignored ({} bytes of ignored data)",
                                  util::PrettifyNum(sdk::g_schema->GetRegistration()), util::PrettifyNum(sdk::g_schema->GetRedundant()),
                                  util::PrettifyNum(sdk::g_schema->GetIgnored()), util::PrettifyNum(sdk::g_schema->GetIgnoredBytes()))
