@@ -1,6 +1,6 @@
 # What is Deadlock?
 
-*Deadlock* (2024) is an online **team-based shooter video game**, akin to games like *Overwatch*, *Call of Duty*, and *Halo*. Deadlock is free to play† - it is currently in a [pre-release test phase](https://store.steampowered.com/app/1422450/Deadlock/).
+*Deadlock* (2024) is an online **team-based shooter video game**, akin to games like *Overwatch*, *Call of Duty*, and *Halo*. Deadlock is free to play† - it is currently in a [pre-release test phase](https://store.steampowered.com/app/1422450/Deadlock/). GameSpot news has an [11-minute youtube video](https://www.youtube.com/watch?v=c59Nc0BWtOc) that is a fantastic overview of the game.
 
 Deadlock has a **unique objective** or "game-mode" that sets it apart from those other shooting-based games:
 - It's *not* 'Free For All' (most kills wins).
@@ -16,7 +16,7 @@ Deadlock's game-mode is Tug-... no, it's **"Push-Of-War"**:
 
 Deadlock is made by **Valve**, a studio known for hit titles including *Counter Strike 2* (2023) and *Dota 2* (2013), which are at time of writing the **1st- and 2nd-most popular games** on Steam, the largest PC gaming platform. *Dota 2* is a competitive MOBA; its annual tournament *The International* boasted a $40,000,000 prize pool in 2021 and drew a peak 2.7 million viewers.
 
-> *Content Warning: Deadlock does not have an ESRB rating yet. My amateur opinion is "Teen". The game features magic/cartoon gun violence. It's not graphic. The game resembles paintball, not a war simulation. Tobacco and alcohol references present. Like on every online platform, social interactions may include bad language or behavior.*
+> *Content Warning: Deadlock does not have an ESRB rating yet. My amateur opinion is "Teen". The game features magic/cartoon gun violence. It's not graphic. The game resembles a sport (like paintball), not a war simulation. Tobacco and alcohol references present. Like on every online platform, social interactions may include bad language or behavior.*
 
 # How do you play Deadlock?
 
