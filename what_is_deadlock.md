@@ -36,9 +36,9 @@ Meanwhile, you'll also have to deal with the **enemy players** and their army of
 
 You are very weak at the beginning of the game -- the enemy defenses will be tough to break at first. **Earn money to get stronger** -- purchase upgrades to your weapons and magic *before* you start focusing on the objectives.
 
-**Earn this money by shooting enemy minions**. This may seem like a strange way to earn money, but it's the signature game mechanic of the MOBA game genre!
+**Earn this money by shooting enemy minions**. This may seem like a strange way to earn money, but it's the signature game mechanic of the MOBA game genre! You can think of it like you're a mercenary collecting "bounties" that have been set on the enemy team.
 
-Your primary goal is to destroy the enemy buildings, but you should actually spend most of your time earning money. The upgrades you buy will make securing those objectives so much easier.
+Your primary goal is to destroy the enemy buildings, but you should actually spend most of your time trying to earn money. The upgrades you buy will make securing those objectives so much easier.
 
 # Dive In!
 
