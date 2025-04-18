@@ -107,9 +107,7 @@ def main(sdk_dir, reference_dir=None, interactive=False):
 
     for ck in module['classes']:
       c = module['classes'][ck]
-      if 'parent' in c:
-        if c['parent'] not in class_usages:
-          class_usages[c['parent']] = set()
+      if 'parent' in c and c['parent'] in module['classes']:
         assert c['parent'] != ck, ck
         class_usages[c['parent']].add(ck)
       for f in c['fields']:
@@ -133,16 +131,12 @@ def main(sdk_dir, reference_dir=None, interactive=False):
       for f in c['fields']:
         t = f['type']
         tree = [t]
-        if t['category'] == 5:
-          if t['name'] not in class_usages:
-            class_usages[t['name']] = set()
+        if t['category'] == 5 and t['name'] in module['classes']:
           if t['name'] != ck:
             class_usages[t['name']].add(ck)
         while 'inner' in tree[-1]:
           tree.append(tree[-1]['inner'])
-          if tree[-1]['category'] == 5:
-            if tree[-1]['name'] not in class_usages:
-              class_usages[tree[-1]['name']] = set()
+          if tree[-1]['category'] == 5 and tree[-1]['name'] in module['classes']:
             if tree[-1]['name'] != ck:
               class_usages[tree[-1]['name']].add(ck)
         for j in range(len(tree)):
@@ -179,7 +173,7 @@ def main(sdk_dir, reference_dir=None, interactive=False):
       class_tie_ordering.sort(key=lambda ck: reference_module_class_ordering[ck] if ck in reference_module_class_ordering else float('inf'))
 
     # priority 1 sort: dependency order
-    module['classes'] = order_dict(module['classes'], uts.topological_sort_with_tie_ordering(class_usages, class_tie_ordering))
+    module['classes'] = order_dict(module['classes'], uts.topological_sort_with_tie_ordering(order_dict(class_usages, class_tie_ordering), class_tie_ordering))
 
     for ek in module['enums']:
       e = module['enums'][ek]
